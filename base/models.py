@@ -48,7 +48,7 @@ class Order(models.Model):
 
 
     def __str__(self):
-        return str(self.createAt)
+        return str(self.createdAt)
 
 
 class OrderItem(models.Model):
