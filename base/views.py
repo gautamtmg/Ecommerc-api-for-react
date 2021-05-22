@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import status
 
-from .models import Product, Order, OrderItem, ShippingAddress
+from .models import Product, Order, OrderItem, ShippingAddress, Review
 from .serializers import ProductSerializer, UserSerializer, UserSerializerWithToken, OrderSerializer
 from .products import products
 
@@ -38,7 +38,12 @@ class MyTokenObtainPairView(TokenObtainPairView):
 
 @api_view(['GET'])
 def getProducts(request):
-    products = Product.objects.all()
+    query = request.query_params.get('keyword')
+
+    if query ==None:
+        query = ''
+
+    products = Product.objects.filter(name__icontains=query)
     serializer = ProductSerializer(products, many=True)
 
     return Response(serializer.data)
@@ -49,6 +54,108 @@ def getProduct(request, pk):
     serializer = ProductSerializer(product)
     return Response(serializer.data )
 
+
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def createProduct(request):
+    user = request.user
+
+
+    product = Product.objects.create(
+        user = user,
+        name='name',
+        price = 10,
+        brand='bransdf',
+        category='smaple category',
+        description='dkajfd;kajsf',
+        countInStock=4,
+        
+
+    )
+    serializer = ProductSerializer(product)
+    return Response(serializer.data )
+
+
+@api_view(['PUT'])
+@permission_classes([IsAdminUser])
+def updateProduct(request, pk):
+    data = request.data
+    product = Product.objects.get(_id=pk)
+
+    product.name = data['name']
+    product.price = data['price']
+    product.brand = data['brand']
+    product.category = data['category']
+    product.description = data['description']
+    product.countInStock = data['countInStock']
+    
+    product.save()
+
+    serializer = ProductSerializer(product)
+    return Response(serializer.data )
+
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def deleteProduct(request, pk):
+    product = Product.objects.get(_id=pk)
+    product.delete()
+    return Response(( 'Product deleted successfully!') )
+
+
+
+@api_view(['POST'])
+def uploadImage(request):
+    data = request.data 
+    product_id = data['product_id']
+    product = Product.objects.get(_id = product_id)
+
+    product.image = request.FILES.get('image')
+    product.save()
+    return Response("Image was uploaed")
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def createProductReview(request, pk):
+    product = Product.objects.get(_id=pk)
+    user = request.user
+    data = request.data
+
+    # 1. Review already exists
+    alreadyExists = product.review_set.filter(user = user).exists()
+    if alreadyExists:
+        content = {'detail': 'Product already reviewed '}
+        return Response(content , status= status.HTTP_400_BAD_REQUEST)
+    # 2. No ratins or zero
+    elif data['rating'] == 0:
+        content = {'detail': 'Please select a rating '}
+        return Response(content , status= status.HTTP_400_BAD_REQUEST)
+    # 3. Create Review
+    else:
+        review = Review.objects.create(
+            user=user,
+            product=product,
+            name= user.first_name,
+            rating=data['rating'],
+            comment=data['comment']
+        )
+
+        reviews = product.review_set.all()
+
+        product.numReviews = len(reviews)
+
+        total = 0
+
+        for i in reviews:
+            total += i.rating
+
+        product.rating = total/len(reviews)
+
+        product.save()
+
+        return Response({'detal': 'Review added'})
 
 
 
@@ -90,6 +197,42 @@ def getUsers(request):
     serializer = UserSerializer(users, many=True)
 
     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def getUserById(request,pk):
+    user = User.objects.get(id=pk)
+    serializer = UserSerializer(user, many=False)
+    return Response(serializer.data)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAdminUser])
+def updateUser(request,pk):
+    user = User.objects.get(id=pk)
+
+    data = request.data
+    user.first_name = data['name']
+    user.user_name = data['email']
+    user.email = data['email']
+    user.is_staff = data['is_admin']
+
+    
+
+    user.save()
+    serializer = UserSerializer(user, many=False)
+
+    return Response(serializer.data)
+
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def deleteUser(request, pk):
+    user = User.objects.get(id=pk)
+    user.delete()
+
+    return Response("User was deleted.", status=status.HTTP_200_OK)
 
 @api_view(['POST'])
 def registerUser(request):
@@ -175,6 +318,13 @@ def getMyOrders(request):
     return Response(serializer.data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def getOrders(request):
+
+    orders = Order.objects.all()
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
 
 
 @api_view(['GET'])
@@ -203,3 +353,14 @@ def updateOrderToPaid(request, pk):
     order.paidAt = datetime.now()
     order.save()
     return Response('Order was paid')
+
+
+@api_view(['PUT'])
+@permission_classes([IsAdminUser])
+def updateOrderToDelivered(request, pk):
+    order = Order.objects.get(_id=pk)
+
+    order.isDelivered = True
+    order.deliveredAt = datetime.now()
+    order.save()
+    return Response('Order was delivered')
